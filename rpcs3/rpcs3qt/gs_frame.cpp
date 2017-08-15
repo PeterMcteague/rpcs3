@@ -13,24 +13,26 @@
 #include "rpcs3_version.h"
 #include "git-version.h"
 
-inline QString qstr(const std::string& _in) { return QString::fromUtf8(_in.data(), static_cast<int>(_in.size())); }
+constexpr auto qstr = QString::fromStdString;
 
 gs_frame::gs_frame(const QString& title, int w, int h, QIcon appIcon, bool disableMouse)
 	: QWindow(), m_windowTitle(title), m_disable_mouse(disableMouse)
 {
-	//Get version by substringing 5632-b2007e73 to get just the part after the dash
-	std::string version = RPCS3_GIT_VERSION;
-	version = version.substr(version.find_last_of('-') + 1, version.length());
+	#ifdef RPCS3_GIT_VERSION
+	//Get version by substringing VersionNumber-buildnumber-commithash to get just the part before the dash
+	std::string version = rpcs3::version.to_string();
+	version = version.substr(0 , version.find_last_of("-"));
 
-	/*if (RPCS3_GIT_BRANCH != "master")
-	{
-		version += "-";
-		version += RPCS3_GIT_BRANCH;
-	}*/
-
-	//Add the branch name (Unless it's master)
-
+	//Attempts to get RPCS3_GIT_BRANCH from git-version.h
+	#ifdef RPCS3_GIT_BRANCH
+		if (RPCS3_GIT_BRANCH != "master")
+		{
+			version += "-";
+			version += RPCS3_GIT_BRANCH;
+		}
+	#endif
 	m_windowTitle += qstr(" | " + version + " | ");
+	#endif
 
 	if (!Emu.GetTitle().empty())
 	{
@@ -47,10 +49,11 @@ gs_frame::gs_frame(const QString& title, int w, int h, QIcon appIcon, bool disab
 		setIcon(appIcon);
 	}
 
-	g_cfg.misc.show_fps_in_title ? m_show_fps = true : m_show_fps = false;
+	m_show_fps = static_cast<bool>(g_cfg.misc.show_fps_in_title);
 
 	resize(w, h);
 
+	setTitle(m_windowTitle);
 	setVisibility(Hidden);
 	create();
 
@@ -205,13 +208,6 @@ void gs_frame::flip(draw_context_t, bool /*skip_frame*/)
 
 			m_frames = 0;
 			fps_t.Start();
-		}
-	}
-	else
-	{
-		if (this->title() != m_windowTitle)
-		{
-			Emu.CallAfter([this, title = std::move(m_windowTitle)]() {setTitle(m_windowTitle); });
 		}
 	}
 }
