@@ -18,19 +18,21 @@ inline QString qstr(const std::string& _in) { return QString::fromUtf8(_in.data(
 gs_frame::gs_frame(const QString& title, int w, int h, QIcon appIcon, bool disableMouse)
 	: QWindow(), m_windowTitle(title), m_disable_mouse(disableMouse)
 {
+#ifdef RPCS3_GIT_VERSION
 	//Get version by substringing 5632-b2007e73 to get just the part after the dash
 	std::string version = RPCS3_GIT_VERSION;
 	version = version.substr(version.find_last_of('-') + 1, version.length());
 
-	/*if (RPCS3_GIT_BRANCH != "master")
+	//Attempts to get RPCS3_GIT_BRANCH from git-version.h 
+	#ifdef RPCS3_GIT_BRANCH
+	if (RPCS3_GIT_BRANCH != "master")
 	{
 		version += "-";
-		version += RPCS3_GIT_BRANCH;
-	}*/
-
-	//Add the branch name (Unless it's master)
-
+		version += rpcs3_git_branch;
+	}
+	#endif
 	m_windowTitle += qstr(" | " + version + " | ");
+#endif
 
 	if (!Emu.GetTitle().empty())
 	{
