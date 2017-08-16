@@ -5,6 +5,7 @@
 
 #include "Utilities/sysinfo.h"
 #include "rpcs3_version.h"
+#include "git-version.h"
 #include <string>
 #include <unordered_map>
 
@@ -65,7 +66,7 @@ namespace logs
 			: file_writer(name)
 			, listener()
 		{
-			const std::string& start = fmt::format("\xEF\xBB\xBF" "RPCS3 v%s\n%s\n", rpcs3::version.to_string(), utils::get_system_info());
+			const std::string& start = fmt::format("\xEF\xBB\xBF" "RPCS3 v%s\nBranch: %s\n%s\n", rpcs3::version.to_string(), RPCS3_GIT_BRANCH , utils::get_system_info());
 			file_writer::log(start.data(), start.size());
 		}
 
