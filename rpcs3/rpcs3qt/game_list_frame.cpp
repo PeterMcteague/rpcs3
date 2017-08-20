@@ -104,11 +104,10 @@ game_list_frame::game_list_frame(std::shared_ptr<gui_settings> settings, const R
 
 	// Search Bar
 	m_Search_Bar = new QLineEdit(m_Tool_Bar);
-	m_Search_Bar->setObjectName("tb_searchbar");
+	m_Search_Bar->setObjectName("tb_searchbar"); // used in default stylesheet
 	m_Search_Bar->setPlaceholderText(tr("Search games ..."));
 	m_Search_Bar->setMinimumWidth(m_Tool_Bar->height() * 5);
 	m_Search_Bar->setFrame(false);
-	m_Search_Bar->setStyleSheet("QLineEdit#tb_searchbar { background: transparent }");
 	connect(m_Search_Bar, &QLineEdit::textChanged, [this](const QString& text) {
 		m_searchText = text;
 		Refresh();
@@ -618,6 +617,7 @@ void game_list_frame::ShowSpecifiedContextMenu(const QPoint &pos, int row)
 	myMenu.addSeparator();
 	QAction* removeGame = myMenu.addAction(tr("&Remove"));
 	QAction* removeConfig = myMenu.addAction(tr("&Remove Custom Configuration"));
+	QAction* deleteShadersCache = myMenu.addAction(tr("&Delete Shaders Cache"));
 	myMenu.addSeparator();
 	QAction* openGameFolder = myMenu.addAction(tr("&Open Install Folder"));
 	QAction* openConfig = myMenu.addAction(tr("&Open Config Folder"));
@@ -643,7 +643,9 @@ void game_list_frame::ShowSpecifiedContextMenu(const QPoint &pos, int row)
 			Refresh();
 		}
 	});
+
 	connect(removeConfig, &QAction::triggered, [=]() {RemoveCustomConfiguration(row); Refresh(true, false); });
+	connect(deleteShadersCache, &QAction::triggered, [=]() { DeleteShadersCache(row); });
 	connect(openGameFolder, &QAction::triggered, [=]() {open_dir(currGame.path); });
 	connect(openConfig, &QAction::triggered, [=]() {open_dir(fs::get_config_dir() + "data/" + currGame.serial); });
 	connect(checkCompat, &QAction::triggered, [=]() {
@@ -720,6 +722,32 @@ void game_list_frame::RemoveCustomConfiguration(int row)
 	{
 		QMessageBox::warning(this, tr("Warning!"), tr("No custom configuration found!"));
 		LOG_ERROR(GENERAL, "Configuration file not found: %s", config_path);
+	}
+}
+
+void game_list_frame::DeleteShadersCache(int row)
+{
+	if (QMessageBox::question(this, tr("Confirm Delete"), tr("Delete shaders cache?")) != QMessageBox::Yes)
+		return;
+
+	const std::string config_base_dir = fs::get_config_dir() + "data/" + m_game_data[row].info.serial;
+
+	if (fs::is_dir(config_base_dir))
+	{
+		fs::dir root = fs::dir(config_base_dir);
+		fs::dir_entry tmp;
+
+		while (root.read(tmp))
+		{
+			if (!fs::is_dir(config_base_dir + "/" + tmp.name))
+				continue;
+
+			const std::string shader_cache_name = config_base_dir + "/" + tmp.name + "/shaders_cache";
+			if (fs::is_dir(shader_cache_name))
+			{
+				fs::remove_all(shader_cache_name, true);
+			}
+		}
 	}
 }
 
@@ -821,7 +849,16 @@ void game_list_frame::SetSearchText(const QString& text)
 
 void game_list_frame::RepaintToolBarIcons()
 {
-	QColor newColor = xgui_settings->GetValue(GUI::gl_toolIconColor).value<QColor>();
+	QColor newColor;
+
+	if (xgui_settings->GetValue(GUI::m_enableUIColors).toBool())
+	{
+		newColor = xgui_settings->GetValue(GUI::gl_toolIconColor).value<QColor>();
+	}
+	else
+	{
+		newColor = GUI::get_Label_Color("gamelist_toolbar_icon_color");
+	}
 
 	m_catActHDD.colored = gui_settings::colorizedIcon(QIcon(":/Icons/hdd_blue.png"), GUI::gl_tool_icon_color, newColor, true);
 	m_catActDisc.colored = gui_settings::colorizedIcon(QIcon(":/Icons/disc_blue.png"), GUI::gl_tool_icon_color, newColor, true);
@@ -842,7 +879,7 @@ void game_list_frame::RepaintToolBarIcons()
 	m_modeActGrid.colored = gui_settings::colorizedIcon(QIcon(":/Icons/grid_blue.png"), GUI::gl_tool_icon_color, newColor);
 	m_modeActGrid.action->setIcon(m_isListLayout ? m_modeActGrid.gray : m_modeActGrid.colored);
 
-	m_Slider_Size->setStyleSheet(QString("QSlider::handle:horizontal{ background: rgba(%1, %2, %3, %4); }")
+	m_Slider_Size->setStyleSheet(m_Slider_Size->styleSheet().append("QSlider::handle:horizontal{ background: rgba(%1, %2, %3, %4); }")
 		.arg(newColor.red()).arg(newColor.green()).arg(newColor.blue()).arg(newColor.alpha()));
 }
 
@@ -943,7 +980,7 @@ void game_list_frame::PopulateGameGrid(uint maxCols, const QSize& image_size, co
 	}
 
 	// Get number of things that'll be in grid and precompute grid size.
-	int entries = 0;
+	uint entries = 0;
 	for (const GUI_GameInfo& game : m_game_data)
 	{
 		if (qstr(game.info.category) == category::disc_Game || qstr(game.info.category) == category::hdd_Game)
