@@ -31,7 +31,7 @@ gs_frame::gs_frame(const QString& title, int w, int h, QIcon appIcon, bool disab
 				version += RPCS3_GIT_BRANCH;
 			}
 		#endif
-
+    
 		m_windowTitle += qstr(" | " + version);
 	#endif
 
