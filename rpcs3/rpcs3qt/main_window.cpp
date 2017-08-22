@@ -1138,18 +1138,11 @@ void main_window::CreateConnects()
 		connect(&dlg, &settings_dialog::GuiSettingsSaveRequest, this, &main_window::SaveWindowState);
 		connect(&dlg, &settings_dialog::GuiSettingsSyncRequest, [=]() {ConfigureGuiFromSettings(true); });
 		connect(&dlg, &settings_dialog::GuiStylesheetRequest, this, &main_window::RequestGlobalStylesheetChange);
-		connect(&dlg, &settings_dialog::ToolBarRepaintRequest, this, &main_window::RepaintToolBarIcons);
-		connect(&dlg, &settings_dialog::ToolBarRepaintRequest, gameListFrame, &game_list_frame::RepaintToolBarIcons);
-		connect(&dlg, &settings_dialog::accepted, [this](){
-			if (guiSettings->GetValue(GUI::m_enableUIColors).toBool())
-			{
-				gameListFrame->RepaintIcons(guiSettings->GetValue(GUI::gl_iconColor).value<QColor>());
-			}
-			else
-			{
-				gameListFrame->RepaintIcons(GUI::get_Label_Color("gamelist_icon_background_color"));
-			}
+		connect(&dlg, &settings_dialog::GuiRepaintRequest, [this](){
+			gameListFrame->RepaintIcons(true);
+			gameListFrame->RepaintToolBarIcons();
 			RepaintToolbar();
+			RepaintToolBarIcons();
 		});
 		dlg.exec();
 	};
@@ -1160,7 +1153,7 @@ void main_window::CreateConnects()
 	connect(ui->confSystemAct, &QAction::triggered, [=]() { openSettings(4); });
 
 	connect(ui->confPadAct, &QAction::triggered, this, [=](){
-		pad_settings_dialog dlg(this);
+		pad_settings_dialog dlg(guiSettings, this);
 		dlg.exec();
 	});
 	connect(ui->confAutopauseManagerAct, &QAction::triggered, [=](){
@@ -1312,7 +1305,7 @@ void main_window::CreateConnects()
 			ui->toolbar_fullscreen->setIcon(icon_fullscreen_off);
 		}
 	});
-	connect(ui->toolbar_controls, &QAction::triggered, [=]() { pad_settings_dialog dlg(this); dlg.exec(); });
+	connect(ui->toolbar_controls, &QAction::triggered, [=]() { pad_settings_dialog dlg(guiSettings, this); dlg.exec(); });
 	connect(ui->toolbar_config, &QAction::triggered, [=]() { openSettings(0); });
 	connect(ui->toolbar_list, &QAction::triggered, [=]() { ui->setlistModeListAct->trigger(); });
 	connect(ui->toolbar_grid, &QAction::triggered, [=]() { ui->setlistModeGridAct->trigger(); });
