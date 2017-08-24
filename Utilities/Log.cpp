@@ -7,6 +7,7 @@
 #include "rpcs3_version.h"
 #include <string>
 #include <unordered_map>
+#include "git-version.h"
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -339,11 +340,11 @@ logs::file_listener::file_listener(const std::string& name)
 	ver.m.ch = nullptr;
 	ver.m.sev = level::always;
 	ver.stamp = 0;
-#ifdef RPCS3_GIT_BRANCH
-	ver.text = fmt::format("\xEF\xBB\xBF" "RPCS3 v%s\nBranch: %s\n%s\n", rpcs3::version.to_string(), RPCS3_GIT_BRANCH, utils::get_system_info());
-#else
-	ver.text = fmt::format("\xEF\xBB\xBF" "RPCS3 v%s\nBranch: %s\n%s\n", rpcs3::version.to_string(), "Unknown branch", utils::get_system_info());
-#endif
+	#ifdef RPCS3_GIT_BRANCH
+		ver.text = fmt::format("\xEF\xBB\xBF" "RPCS3 v%s\nBranch: %s\n%s\n", rpcs3::version.to_string(), RPCS3_GIT_BRANCH, utils::get_system_info());
+	#else
+		ver.text = fmt::format("\xEF\xBB\xBF" "RPCS3 v%s\nBranch: %s\n%s\n", rpcs3::version.to_string(), "Unknown branch", utils::get_system_info());
+	#endif
 	file_writer::log(ver.text.data(), ver.text.size());
 	file_writer::log("\n", 1);
 	g_messages.emplace_back(std::move(ver));
