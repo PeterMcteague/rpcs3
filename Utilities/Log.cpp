@@ -57,7 +57,7 @@ namespace logs
 #ifdef _WIN32
 		::HANDLE m_fmap;
 #endif
-		atomic_t<std::size_t> m_pos{ 0 };
+		atomic_t<std::size_t> m_pos{0};
 		uchar* m_fptr;
 
 	public:
@@ -162,7 +162,7 @@ namespace logs
 	std::vector<stored_message> g_messages;
 
 	// Must be set to true in main()
-	atomic_t<bool> g_init{ false };
+	atomic_t<bool> g_init{false};
 
 	void reset()
 	{
@@ -267,7 +267,7 @@ void logs::message::broadcast(const char* fmt, const fmt_type_info* sup, const u
 			}
 
 			// Store message additionally
-			g_messages.emplace_back(stored_message{ *this, stamp, std::move(prefix), text });
+			g_messages.emplace_back(stored_message{*this, stamp, std::move(prefix), text});
 		}
 	}
 
