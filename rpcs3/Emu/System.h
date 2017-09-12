@@ -210,6 +210,9 @@ public:
 	}
 
 	void Init();
+
+	void pkg_install_system(const std::string & pkg_path, const std::string & local_path);
+			
 	void SetPath(const std::string& path, const std::string& elf_path = {});
 
 	const std::string& GetPath() const
