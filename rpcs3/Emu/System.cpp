@@ -20,6 +20,7 @@
 
 #include "Utilities/StrUtil.h"
 
+#include <Crypto/unpkg.h>
 #include "../Crypto/unself.h"
 #include "yaml-cpp/yaml.h"
 
@@ -186,7 +187,7 @@ void Emulator::Init()
 	{
 		g_tty.open(fs::get_config_dir() + "TTY.log", fs::rewrite + fs::append);
 	}
-	
+
 	idm::init();
 	fxm::init();
 
@@ -219,12 +220,44 @@ void Emulator::Init()
 	fs::create_dir(dev_hdd1 + "game/");
 	fs::create_path(dev_hdd1);
 	fs::create_path(dev_usb);
-  
+
 #ifdef WITH_GDB_DEBUGGER
 	fxm::make<GDBDebugServer>();
 #endif
 	// Initialize patch engine
 	fxm::make_always<patch_engine>()->append(fs::get_config_dir() + "/patch.yml");
+}
+
+void Emulator::pkg_install_system(const std::string& pkg_path, const std::string& local_path)
+{
+	fs::file pkg_f(pkg_path);
+	// Synchronization variable
+	atomic_t<double> progress(0.);
+	{
+		// Run PKG unpacking asynchronously
+		scope_thread worker("PKG Installer", [&]
+		{
+			if (pkg_install(pkg_f, local_path + '/', progress, pkg_path))
+			{
+				progress = 1.;
+				return;
+			}
+			progress = -1.;
+		});
+		// Wait for the completion
+		while (std::this_thread::sleep_for(5ms), std::abs(progress) < 1.)
+		{
+			if (progress > 0.)
+			{
+				std::this_thread::sleep_for(100ms);
+			}
+		}
+	}
+
+	if (progress >= 1.)
+	{
+		LOG_SUCCESS(GENERAL, "Finished install attempt of %s.", pkg_path);
+	}
 }
 
 void Emulator::SetPath(const std::string& path, const std::string& elf_path)
@@ -452,6 +485,88 @@ void Emulator::Load(bool add_only)
 			return;
 		}
 
+		// Check for additional directories (INSDIR , TROPDIR etc)
+		// We should check for flags here that enable those directories but checking for the directories should be fine (Though it does mean simply adding named folders to dev_bdvd will cause them to be valid). Documented here for future http://www.psdevwiki.com/ps3/PARAM.SFO#BOOTABLE
+
+		//Insdir check. We need to install the packages over the game install if this is the case.
+		const std::string insdir_disk_dir = vfs::get("/dev_bdvd") + "PS3_GAME/INSDIR";
+		if (fs::is_dir(insdir_disk_dir))
+		{
+			LOG_NOTICE(LOADER, "Found insdir: %s", insdir_disk_dir);
+
+			//Check if the INSDIR's PARAM.SFO has a higher version number than what's installed
+			double app_ver_insdir;
+			const auto insdir_psf = psf::load_object([&]
+			{
+				return fs::file(insdir_disk_dir + "/PARAM.SFO");
+			}());
+
+			// Get app_ver from PARAM.SFO in install dir.
+			double app_ver_install;
+			const std::string local_path = Emu.GetHddDir() + "game/" + m_title_id;
+			const auto hdd_psf = psf::load_object([&]
+			{
+				return fs::file(local_path + "/PARAM.SFO");
+			}());
+
+			//Convert string app_ver's to number..
+			app_ver_insdir = ::atof(psf::get_string(insdir_psf, "APP_VER", "0.00").c_str());
+			app_ver_install = ::atof(psf::get_string(hdd_psf, "APP_VER", "0.00").c_str());
+
+
+			// If the pkg's app ver is higher, then install.
+			if (app_ver_insdir <= app_ver_install)
+			{
+				LOG_NOTICE(LOADER, "Insdir already installed.");
+			}
+			else
+			{
+				fs::create_dir(local_path);
+				std::string file_base = "/DATA";
+				int file_number = 0;
+
+				// For .pkg in INSDIR named DATA### (Incrementing)
+				while (fs::is_file(insdir_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + ".pkg"))
+				{
+					std::string pkg_dir = insdir_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + ".pkg";
+					fs::file pkg_file = fs::file(pkg_dir);
+					LOG_NOTICE(LOADER, "Installing package from insdir: %s", pkg_dir);
+
+					atomic_t<double> progress(0.);
+
+					//Install package
+					pkg_install_system(pkg_dir, local_path);
+					file_number++;
+				}
+			}
+		}
+
+		//Tropdir check
+		const std::string tropdir_disk_dir = vfs::get("/dev_bdvd") + "/PS3_GAME/TROPDIR";
+		if (fs::is_dir(tropdir_disk_dir))
+		{
+			// Documentation: http://www.psdevwiki.com/ps3/Trophy_files
+			// Install any files to home/userid/trophy/
+			// It NPCOMMID already on disc , rename to _BU_ + NPCOMMID. Old backups are deleted if they exist (Only 2 can exist at one time)
+			// Copy folder inside tropdir to dev_hdd0/home/<user_id>/trohpy/NPCOMMID (It says install so not 100% sure)
+			// Update TROPSYS.dat
+		}
+
+		//Pkgdir check
+		const std::string pkgdir_disk_dir = vfs::get("/dev_bdvd") + "/PS3_GAME/PKGDIR";
+		if (fs::is_dir(pkgdir_disk_dir))
+		{
+			// Think if pkgdir exists you install pkg's from there. Not sure.
+		}
+
+		//Licdir check
+		const std::string licdir_disk_dir = vfs::get("/dev_bdvd") + "/PS3_GAME/LICDIR";
+		if (fs::is_dir(licdir_disk_dir))
+		{
+			// Contais LIC.DAT documented here: http://www.psdevwiki.com/ps3/LIC.DAT
+			// Not well documented so unsure what to do with it.
+		}
+
 		// Check game updates
 		const std::string hdd0_boot = hdd0_game + m_title_id + "/USRDIR/EBOOT.BIN";
 
@@ -630,7 +745,6 @@ void Emulator::Run()
 		return;
 	}
 
-	
 	GetCallbacks().on_run();
 
 	m_pause_start_time = 0;
