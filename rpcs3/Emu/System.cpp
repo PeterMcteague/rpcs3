@@ -531,9 +531,7 @@ void Emulator::Load(bool add_only)
 					std::string pkg_dir = insdir_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + ".pkg";
 					fs::file pkg_file = fs::file(pkg_dir);
 					LOG_NOTICE(LOADER, "Installing package from insdir: %s", pkg_dir);
-
-					atomic_t<double> progress(0.);
-
+					
 					//Install package
 					pkg_install_system(pkg_dir, local_path);
 					file_number++;
@@ -542,7 +540,7 @@ void Emulator::Load(bool add_only)
 		}
 
 		//Tropdir check
-		const std::string tropdir_disk_dir = vfs::get("/dev_bdvd") + "/PS3_GAME/TROPDIR";
+		const std::string tropdir_disk_dir = vfs::get("/dev_bdvd") + "PS3_GAME/TROPDIR";
 		if (fs::is_dir(tropdir_disk_dir))
 		{
 			// Documentation: http://www.psdevwiki.com/ps3/Trophy_files
@@ -553,18 +551,65 @@ void Emulator::Load(bool add_only)
 		}
 
 		//Pkgdir check
-		const std::string pkgdir_disk_dir = vfs::get("/dev_bdvd") + "/PS3_GAME/PKGDIR";
+		const std::string pkgdir_disk_dir = vfs::get("/dev_bdvd") + "PS3_GAME/PKGDIR";
 		if (fs::is_dir(pkgdir_disk_dir))
 		{
 			// Think if pkgdir exists you install pkg's from there. Not sure.
 		}
 
 		//Licdir check
-		const std::string licdir_disk_dir = vfs::get("/dev_bdvd") + "/PS3_GAME/LICDIR";
+		const std::string licdir_disk_dir = vfs::get("/dev_bdvd") + "PS3_GAME/LICDIR";
 		if (fs::is_dir(licdir_disk_dir))
 		{
 			// Contais LIC.DAT documented here: http://www.psdevwiki.com/ps3/LIC.DAT
 			// Not well documented so unsure what to do with it.
+		}
+
+		//PS3_EXTRA CHECK
+		const std::string extra_disk_dir = vfs::get("/dev_bdvd") + "PS3_EXTRA";
+		if (fs::is_dir(extra_disk_dir))
+		{
+			LOG_NOTICE(LOADER, "Found PS3_EXTRA dir: %s", extra_disk_dir);
+
+			// For all folders named D###
+			std::string file_base = "/D";
+			int file_number = 0;
+
+			// For dir /PS3_EXTRA/D###
+			while (fs::is_dir(extra_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number))))
+			{
+				// If it contains DATA000.pkg , check the file header for the TITLE_ID. If it doesn't exist on HDD0 , install the pkg. There's also P3T files or MP4's but we're intentionally not handling them as RPCS3 can't use them.
+				std::string path = extra_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + "/DATA000.pkg";
+
+				if (fs::is_file(path))
+				{
+					fs::file pkg_f(path);
+
+					// Get title ID
+					std::vector<char> title_id(9);
+					pkg_f.seek(55);
+					pkg_f.read(title_id);
+					pkg_f.seek(0);
+
+					std::string local_path = Emu.GetHddDir() + "game/" + std::string(std::begin(title_id), std::end(title_id));
+
+					if (fs::is_dir(local_path))
+					{
+						LOG_NOTICE(LOADER, "PS3_EXTRA Package already installed: %s , ID %s", path , std::string(std::begin(title_id), std::end(title_id)));
+					}
+					else
+					{
+						//Install package
+						fs::create_dir(local_path);
+						pkg_install_system(path, local_path);
+					}
+				}
+				else
+				{
+					LOG_NOTICE(LOADER, "PS3_EXTRA Directory contains no games: %s", extra_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)));
+				}
+				file_number++;
+			}
 		}
 
 		// Check game updates
