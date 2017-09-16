@@ -529,7 +529,6 @@ void Emulator::Load(bool add_only)
 				while (fs::is_file(insdir_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + ".pkg"))
 				{
 					std::string pkg_dir = insdir_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + ".pkg";
-					fs::file pkg_file = fs::file(pkg_dir);
 					LOG_NOTICE(LOADER, "Installing package from insdir: %s", pkg_dir);
 					
 					//Install package
