@@ -20,7 +20,6 @@
 
 #include "Utilities/StrUtil.h"
 
-#include <Crypto/unpkg.h>
 #include "../Crypto/unself.h"
 #include "yaml-cpp/yaml.h"
 
@@ -228,38 +227,6 @@ void Emulator::Init()
 	fxm::make_always<patch_engine>()->append(fs::get_config_dir() + "/patch.yml");
 }
 
-void Emulator::pkg_install_system(const std::string& pkg_path, const std::string& local_path)
-{
-	fs::file pkg_f(pkg_path);
-	// Synchronization variable
-	atomic_t<double> progress(0.);
-	{
-		// Run PKG unpacking asynchronously
-		scope_thread worker("PKG Installer", [&]
-		{
-			if (pkg_install(pkg_f, local_path + '/', progress, pkg_path))
-			{
-				progress = 1.;
-				return;
-			}
-			progress = -1.;
-		});
-		// Wait for the completion
-		while (std::this_thread::sleep_for(5ms), std::abs(progress) < 1.)
-		{
-			if (progress > 0.)
-			{
-				std::this_thread::sleep_for(100ms);
-			}
-		}
-	}
-
-	if (progress >= 1.)
-	{
-		LOG_SUCCESS(GENERAL, "Finished install attempt of %s.", pkg_path);
-	}
-}
-
 void Emulator::SetPath(const std::string& path, const std::string& elf_path)
 {
 	m_path = path;
@@ -325,7 +292,7 @@ void Emulator::Load(bool add_only)
 		Init();
 
 		// Load game list (maps ABCD12345 IDs to /dev_bdvd/ locations) 
-		YAML::Node games = YAML::Load(fs::file{fs::get_config_dir() + "/games.yml", fs::read + fs::create}.to_string());
+		YAML::Node games = YAML::Load(fs::file{ fs::get_config_dir() + "/games.yml", fs::read + fs::create }.to_string());
 
 		if (!games.IsMap())
 		{
@@ -339,7 +306,7 @@ void Emulator::Load(bool add_only)
 		// Load PARAM.SFO (TODO)
 		const auto _psf = psf::load_object([&]
 		{
-			if (fs::file sfov{elf_dir + "/sce_sys/param.sfo"})
+			if (fs::file sfov{ elf_dir + "/sce_sys/param.sfo" })
 			{
 				return sfov;
 			}
@@ -360,21 +327,21 @@ void Emulator::Load(bool add_only)
 		LOG_NOTICE(LOADER, "Cache: %s", GetCachePath());
 
 		// Load custom config-0
-		if (fs::file cfg_file{m_cache_path + "/config.yml"})
+		if (fs::file cfg_file{ m_cache_path + "/config.yml" })
 		{
 			LOG_NOTICE(LOADER, "Applying custom config: %s/config.yml", m_cache_path);
 			g_cfg.from_string(cfg_file.to_string());
 		}
 
 		// Load custom config-1
-		if (fs::file cfg_file{fs::get_config_dir() + "data/" + m_title_id + "/config.yml"})
+		if (fs::file cfg_file{ fs::get_config_dir() + "data/" + m_title_id + "/config.yml" })
 		{
 			LOG_NOTICE(LOADER, "Applying custom config: data/%s/config.yml", m_title_id);
 			g_cfg.from_string(cfg_file.to_string());
 		}
 
 		// Load custom config-2
-		if (fs::file cfg_file{m_path + ".yml"})
+		if (fs::file cfg_file{ m_path + ".yml" })
 		{
 			LOG_NOTICE(LOADER, "Applying custom config: %s.yml", m_path);
 			g_cfg.from_string(cfg_file.to_string());
@@ -459,7 +426,7 @@ void Emulator::Load(bool add_only)
 				return;
 			}
 
-			const std::string bdvd_title_id = psf::get_string(psf::load_object(fs::file{vfs::get("/dev_bdvd/PS3_GAME/PARAM.SFO")}), "TITLE_ID");
+			const std::string bdvd_title_id = psf::get_string(psf::load_object(fs::file{ vfs::get("/dev_bdvd/PS3_GAME/PARAM.SFO") }), "TITLE_ID");
 
 			if (bdvd_title_id != m_title_id)
 			{
@@ -483,127 +450,6 @@ void Emulator::Load(bool add_only)
 		{
 			LOG_NOTICE(LOADER, "Finished to add data to games.yml by boot for: %s", m_path);
 			return;
-		}
-
-		// Check for additional directories (INSDIR , TROPDIR etc)
-		// We should check for flags here that enable those directories but checking for the directories should be fine (Though it does mean simply adding named folders to dev_bdvd will cause them to be valid). Documented here for future http://www.psdevwiki.com/ps3/PARAM.SFO#BOOTABLE
-
-		//Insdir check. We need to install the packages over the game install if this is the case.
-		const std::string insdir_disk_dir = vfs::get("/dev_bdvd") + "PS3_GAME/INSDIR";
-		if (fs::is_dir(insdir_disk_dir))
-		{
-			LOG_NOTICE(LOADER, "Found insdir: %s", insdir_disk_dir);
-
-			// Get app_ver from PARAM.sfo on disc.
-			double app_ver_insdir;
-			const auto insdir_psf = psf::load_object([&]
-			{
-				return fs::file(insdir_disk_dir + "/PARAM.SFO");
-			}());
-
-			// Get app_ver from PARAM.SFO in install dir.
-			double app_ver_install;
-			const std::string local_path = Emu.GetHddDir() + "game/" + m_title_id;
-			const auto hdd_psf = psf::load_object([&]
-			{
-				return fs::file(local_path + "/PARAM.SFO");
-			}());
-
-			// Convert string app_ver's to double for comparison
-			app_ver_insdir = ::atof(psf::get_string(insdir_psf, "APP_VER", "0.00").c_str());
-			app_ver_install = ::atof(psf::get_string(hdd_psf, "APP_VER", "0.00").c_str());
-
-
-			// If the pkg's app ver is higher, then install.
-			if (app_ver_insdir <= app_ver_install)
-			{
-				LOG_NOTICE(LOADER, "Insdir already installed.");
-			}
-			else
-			{
-				// Create required directory
-				fs::create_dir(local_path);
-				std::string file_base = "/DATA";
-				int file_number = 0;
-
-				// For .pkg in INSDIR named DATA### install package
-				while (fs::is_file(insdir_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + ".pkg"))
-				{
-					std::string pkg_dir = insdir_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + ".pkg";
-					LOG_NOTICE(LOADER, "Installing package from insdir: %s", pkg_dir);
-
-					pkg_install_system(pkg_dir, local_path);
-					file_number++;
-				}
-			}
-		}
-
-		//Tropdir check
-		const std::string tropdir_disk_dir = vfs::get("/dev_bdvd") + "PS3_GAME/TROPDIR";
-		if (fs::is_dir(tropdir_disk_dir))
-		{
-			// Unimplemented. Documentation: http://www.psdevwiki.com/ps3/Trophy_files
-		}
-
-		//Pkgdir check
-		const std::string pkgdir_disk_dir = vfs::get("/dev_bdvd") + "PS3_GAME/PKGDIR";
-		if (fs::is_dir(pkgdir_disk_dir))
-		{
-			// Unimplemented.
-		}
-
-		//Licdir check
-		const std::string licdir_disk_dir = vfs::get("/dev_bdvd") + "PS3_GAME/LICDIR";
-		if (fs::is_dir(licdir_disk_dir))
-		{
-			// Unimplemented. Documentation: http://www.psdevwiki.com/ps3/LIC.DAT
-		}
-
-		//PS3_EXTRA CHECK
-		const std::string extra_disk_dir = vfs::get("/dev_bdvd") + "PS3_EXTRA";
-		if (fs::is_dir(extra_disk_dir))
-		{
-			LOG_NOTICE(LOADER, "Found PS3_EXTRA dir: %s", extra_disk_dir);
-
-			// For all folders named D###
-			std::string file_base = "/D";
-			int file_number = 0;
-
-			// For dir /PS3_EXTRA/D###
-			while (fs::is_dir(extra_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number))))
-			{
-				// If dir contains DATA000.pkg , check the file header for the TITLE_ID. If that folder doesn't exist on HDD0 , install the pkg. There's also P3T files or MP4's but we're intentionally not handling them as RPCS3 can't use them.
-				std::string path = extra_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)) + "/DATA000.pkg";
-
-				if (fs::is_file(path))
-				{
-					fs::file pkg_f(path);
-
-					// Get title ID
-					std::vector<char> title_id(9);
-					pkg_f.seek(55);
-					pkg_f.read(title_id);
-					pkg_f.seek(0);
-
-					std::string local_path = Emu.GetHddDir() + "game/" + std::string(std::begin(title_id), std::end(title_id));
-
-					if (fs::is_dir(local_path))
-					{
-						LOG_NOTICE(LOADER, "PS3_EXTRA Package already installed: %s , ID %s", path, std::string(std::begin(title_id), std::end(title_id)));
-					}
-					else
-					{
-						//Install package
-						fs::create_dir(local_path);
-						pkg_install_system(path, local_path);
-					}
-				}
-				else
-				{
-					LOG_NOTICE(LOADER, "PS3_EXTRA Directory contains no games: %s", extra_disk_dir + file_base + std::string(3 - std::to_string(file_number).length(), '0').append(std::to_string(file_number)));
-				}
-				file_number++;
-			}
 		}
 
 		// Check game updates
@@ -649,7 +495,7 @@ void Emulator::Load(bool add_only)
 				// Decrypt SELF
 				elf_file = decrypt_self(std::move(elf_file));
 
-				if (fs::file elf_out{decrypted_path, fs::rewrite})
+				if (fs::file elf_out{ decrypted_path, fs::rewrite })
 				{
 					elf_out.write(elf_file.to_vector<u8>());
 					elf_out.close();
@@ -773,7 +619,7 @@ void Emulator::Run()
 	if (!IsReady())
 	{
 		Load();
-		if(!IsReady()) return;
+		if (!IsReady()) return;
 	}
 
 	if (IsRunning()) Stop();
@@ -783,6 +629,7 @@ void Emulator::Run()
 		Resume();
 		return;
 	}
+
 
 	GetCallbacks().on_run();
 
