@@ -210,7 +210,6 @@ public:
 	}
 
 	void Init();
-			
 	void SetPath(const std::string& path, const std::string& elf_path = {});
 
 	const std::string& GetPath() const
