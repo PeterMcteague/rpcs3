@@ -250,7 +250,7 @@ void main_window::InstallDiscExtra(const std::string path)
 				}
 			}
 		}
-
+    
 		//Pkgdir check
 		const std::string pkgdir_disk_dir = path + "/PS3_GAME/PKGDIR";
 		if (fs::is_dir(pkgdir_disk_dir))
